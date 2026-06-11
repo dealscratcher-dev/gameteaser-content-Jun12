@@ -66,14 +66,22 @@ export default function PrivacyPage() {
           <strong className="text-white/80">Information stored locally on your device:</strong>{" "}
           Season date preferences, daily check-in streaks, card likes, and
           cookie consent choices are stored in your browser (localStorage /
-          sessionStorage). We do not transmit this to our servers because we do
-          not operate a login system or backend database for these features.
+          sessionStorage). This data remains on your device and is not transmitted
+          to our servers for these specific features.
+        </p>
+        <p className="text-sm text-white/60 font-[family-name:var(--font-ibm-plex)] leading-relaxed">
+          <strong className="text-white/80">Server-side data:</strong>{" "}
+          We use Supabase (a Postgres-based backend) to store and manage published content items including game releases, anime events, Comic-Con dates, and other editorial content. This data includes titles, descriptions, release dates, platforms, genres, cover images, and metadata. We do not store personal user accounts or user-generated content on our servers.
         </p>
         <p className="text-sm text-white/60 font-[family-name:var(--font-ibm-plex)] leading-relaxed">
           <strong className="text-white/80">Automatically collected information:</strong>{" "}
           When ads are enabled and you consent, Google and its partners may
           collect device identifiers, IP address, browser type, pages visited,
-          and ad interaction data through cookies and similar technologies.
+          and ad interaction data through cookies and similar technologies. See our{" "}
+          <Link href="/cookies" className="text-orange-400 hover:text-orange-300 transition-colors">
+            Cookie Settings
+          </Link>{" "}
+          page for details.
         </p>
       </section>
 
@@ -86,6 +94,7 @@ export default function PrivacyPage() {
           {[
             "Operate countdown timers and remember your preferences",
             "Respond to contact emails",
+            "Manage and publish editorial content (games, events, anime, comics)",
             "Display and measure advertisements (with consent)",
             "Improve site content and fix reported date errors",
           ].map((item) => (
@@ -106,7 +115,8 @@ export default function PrivacyPage() {
           We use <strong className="text-white/80">Google AdSense</strong>{" "}
           (Google LLC) to show ads. Google uses cookies to serve ads based on
           your visits to this and other websites. Google's use of advertising
-          cookies enables it and its partners to serve ads to you.
+          cookies enables it and its partners to serve ads to you based on your
+          previous visits to our site and other sites on the Internet.
         </p>
         <ul className="space-y-2 text-sm font-[family-name:var(--font-ibm-plex)]">
           {EXTERNAL_LINKS.map((link) => (
@@ -170,8 +180,29 @@ export default function PrivacyPage() {
           </li>
         </ul>
         <p className="text-sm text-white/60 font-[family-name:var(--font-ibm-plex)] leading-relaxed">
-          You can decline non-essential ad cookies via our cookie banner or
-          block cookies in your browser settings.
+          You can manage your cookie preferences via our{" "}
+          <Link href="/cookies" className="text-orange-400 hover:text-orange-300 transition-colors">
+            Cookie Settings
+          </Link>{" "}
+          page or block cookies in your browser settings.
+        </p>
+      </section>
+
+      {/* Content & Intellectual Property */}
+      <section className="mt-10 space-y-4">
+        <h2 className="text-xs font-bold uppercase tracking-[0.2em] text-white/30 font-[family-name:var(--font-ibm-plex)]">
+          Content & intellectual property
+        </h2>
+        <p className="text-sm text-white/60 font-[family-name:var(--font-ibm-plex)] leading-relaxed">
+          TheGameBit is an independent fan resource. Game, anime, comic, and event data 
+          are sourced from public APIs, official announcements, and public sources. All trademarks, 
+          logos, and images are property of their respective owners (Activision, Krafton, anime studios, 
+          Comic-Con International, etc.). We do not claim ownership of this content and operate under fair use 
+          for informational and editorial purposes. See our{" "}
+          <Link href="/terms" className="text-orange-400 hover:text-orange-300 transition-colors">
+            Terms of Use
+          </Link>{" "}
+          for more details.
         </p>
       </section>
 
@@ -179,7 +210,7 @@ export default function PrivacyPage() {
       {[
         {
           heading: "Data retention",
-          body: "Local browser data remains until you clear site data. Emails are kept only as long as needed to respond and resolve inquiries.",
+          body: "Local browser data remains until you clear site data. Server-side content is retained indefinitely for editorial purposes. Contact emails are kept only as long as needed to respond and resolve inquiries.",
         },
         {
           heading: "Children's privacy",
