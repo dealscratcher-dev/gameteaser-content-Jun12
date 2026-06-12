@@ -123,47 +123,47 @@ export default async function HomePage() {
   // ============================================================
   // 1. Fetch data for Countdown Wheels (franchises + releases)
   // ============================================================
-  const { data: franchises, error: franchisesError } = await supabase
+  // Use explicit any[] type to avoid TypeScript inference issues on Netlify
+  const { data: franchises } = await supabase
     .from("franchises")
     .select("*")
-    .order("name");
+    .order("name") as { data: any[] | null };
 
-  if (franchisesError) {
-    console.error("Error fetching franchises:", franchisesError);
-  }
-
-  const { data: allReleases, error: releasesError } = await supabase
+  const { data: allReleases } = await supabase
     .from("releases")
     .select("*")
-    .order("display_order");
+    .order("display_order") as { data: any[] | null };
 
-  if (releasesError) {
-    console.error("Error fetching releases:", releasesError);
-  }
+  // Safety: ensure arrays exist
+  const safeFranchises = franchises || [];
+  const safeReleases = allReleases || [];
 
-  const wheelsData = (franchises || []).map(franchise => {
-    const franchiseReleases = (allReleases || [])
-      .filter(r => r.franchise_id === franchise.id)
-      .map(r => ({
-        id: r.id,
-        title: r.title,
-        short: r.short_code,
-        status: mapStatus(r.status),
-        releaseDate: r.release_date
-          ? new Date(r.release_date).toLocaleDateString(undefined, {
-              year: "numeric", month: "short", day: "numeric"
-            })
-          : "TBD",
-        targetDate: r.target_timestamp
-          ? new Date(r.target_timestamp).toISOString()
-          : undefined,
-      }));
-
-    return {
-      franchise,
-      releases: franchiseReleases,
-    };
-  }).filter(w => w.releases.length > 0);
+  const wheelsData = safeFranchises
+    .map(franchise => {
+      const franchiseReleases = safeReleases
+        .filter((r: any) => r.franchise_id === franchise.id)
+        .map((r: any) => ({
+          id: r.id,
+          title: r.title,
+          short: r.short_code,
+          status: mapStatus(r.status),
+          releaseDate: r.release_date
+            ? new Date(r.release_date).toLocaleDateString(undefined, {
+                year: "numeric",
+                month: "short",
+                day: "numeric",
+              })
+            : "TBD",
+          targetDate: r.target_timestamp
+            ? new Date(r.target_timestamp).toISOString()
+            : undefined,
+        }));
+      return {
+        franchise,
+        releases: franchiseReleases,
+      };
+    })
+    .filter(w => w.releases.length > 0);
 
   // ============================================================
   // 2. Other sections still use content_items (unchanged)
@@ -318,7 +318,7 @@ export default async function HomePage() {
           )}
         </section>
 
-        {/* Everything below remains exactly as before – uses content_items */}
+        {/* What we track */}
         <section
           id="track"
           aria-labelledby="track-heading"
@@ -351,6 +351,7 @@ export default async function HomePage() {
           </div>
         </section>
 
+        {/* Upcoming drops */}
         <section
           aria-labelledby="upcoming-heading"
           className="mx-auto max-w-7xl px-4 py-12 sm:py-16 md:px-6"
@@ -414,6 +415,7 @@ export default async function HomePage() {
           )}
         </section>
 
+        {/* Curated Releases */}
         <section
           aria-labelledby="curated-heading"
           className="bg-white/[0.01] border-y border-white/5 py-12 sm:py-16"
@@ -508,6 +510,7 @@ export default async function HomePage() {
           </div>
         </section>
 
+        {/* Hologram Roster */}
         <section
           id="roster"
           aria-labelledby="roster-heading"
@@ -524,6 +527,7 @@ export default async function HomePage() {
           </div>
         </section>
 
+        {/* Notes */}
         <section
           id="notes"
           aria-labelledby="notes-heading"
