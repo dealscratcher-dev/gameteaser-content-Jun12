@@ -157,6 +157,7 @@ export default async function HomePage() {
           targetDate: r.target_timestamp
             ? new Date(r.target_timestamp).toISOString()
             : undefined,
+            coverUrl: r.cover_url, 
         }));
       return {
         franchise,
