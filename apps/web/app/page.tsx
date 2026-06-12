@@ -25,14 +25,12 @@ const HERO_TAGS: HeroTag[] = [
 
 // ─── Helper functions ───────────────────────────────────────────────────
 function getActiveVerticalFromDb(items: any[]): Vertical {
-  // Find any active event based on target_timestamp or release_date
   const now = new Date();
   const active = items.filter(item => {
     const target = item.target_timestamp ? new Date(item.target_timestamp) : null;
     return target && target > now;
   });
   if (active.length === 0) return "games";
-  // fallback – you can derive vertical from type
   return "games";
 }
 
@@ -95,22 +93,83 @@ function MiniStat({ value, label }: { value: string; label: string }) {
   );
 }
 
-// ─── Helper to extract series tag from `tags` array ────────────────────
-function getSeriesTag(item: any): string | null {
-  if (!item.tags || !Array.isArray(item.tags)) return null;
-  // Look for tags that end with "-series" (e.g. "black-ops-series")
-  const seriesTag = item.tags.find((tag: string) => tag.endsWith("-series"));
-  return seriesTag || null;
+// ─── Helper to map DB status to ReleaseWheel status ────────────────────
+function mapStatus(dbStatus: string): "past" | "current" | "upcoming" {
+  switch (dbStatus) {
+    case "completed": return "past";
+    case "ongoing":   return "current";
+    case "announced": return "upcoming";
+    default:          return "upcoming";
+  }
+}
+
+// ─── Helper to derive posterTitle from franchise slug ──────────────────
+function getPosterTitle(slug: string): string {
+  switch (slug) {
+    case "black-ops":      return "BO";
+    case "modern-warfare": return "MW";
+    case "warzone":        return "WZ";
+    case "god-of-war":     return "GOW";
+    default:               return slug.slice(0, 2).toUpperCase();
+  }
 }
 
 // ─── Page ───────────────────────────────────────────────────────────────
 export const dynamic = "force-dynamic";
 
 export default async function HomePage() {
-  // 1. Fetch all published content items
+  const supabase = await createServerSupabaseClient();
+
+  // ============================================================
+  // 1. Fetch data for Countdown Wheels (franchises + releases)
+  // ============================================================
+  const { data: franchises, error: franchisesError } = await supabase
+    .from("franchises")
+    .select("*")
+    .order("name");
+
+  if (franchisesError) {
+    console.error("Error fetching franchises:", franchisesError);
+  }
+
+  const { data: allReleases, error: releasesError } = await supabase
+    .from("releases")
+    .select("*")
+    .order("display_order");
+
+  if (releasesError) {
+    console.error("Error fetching releases:", releasesError);
+  }
+
+  const wheelsData = (franchises || []).map(franchise => {
+    const franchiseReleases = (allReleases || [])
+      .filter(r => r.franchise_id === franchise.id)
+      .map(r => ({
+        id: r.id,
+        title: r.title,
+        short: r.short_code,
+        status: mapStatus(r.status),
+        releaseDate: r.release_date
+          ? new Date(r.release_date).toLocaleDateString(undefined, {
+              year: "numeric", month: "short", day: "numeric"
+            })
+          : "TBD",
+        targetDate: r.target_timestamp
+          ? new Date(r.target_timestamp).toISOString()
+          : undefined,
+      }));
+
+    return {
+      franchise,
+      releases: franchiseReleases,
+    };
+  }).filter(w => w.releases.length > 0);
+
+  // ============================================================
+  // 2. Other sections still use content_items (unchanged)
+  // ============================================================
   let publishedItems: any[] = [];
   try {
-    const supabase = await createServerSupabaseClient();
     const { data } = await supabase
       .from("content_items")
       .select("*")
@@ -121,38 +180,6 @@ export default async function HomePage() {
     console.error("Failed to load published content items:", err);
   }
 
-  // 2. Prepare data for ReleaseWheels: group releases by series tag
-  const releasesBySeries = new Map<string, Release[]>();
-  publishedItems
-    .filter((item) => item.type === "countdown")
-    .forEach((item) => {
-      const seriesTag = getSeriesTag(item);
-      if (!seriesTag) return;
-      const metadata = item.metadata || {};
-      const release: Release = {
-        id: item.id, // use real id
-        title: item.title,
-        short: metadata.short_code || item.slug?.substring(0, 3).toUpperCase() || "???",
-        status: metadata.wheel_status || "upcoming",
-        releaseDate: metadata.release_label || item.release_date || "Coming Soon",
-        targetDate: item.target_timestamp ? new Date(item.target_timestamp).toISOString() : undefined,
-      };
-      if (!releasesBySeries.has(seriesTag)) releasesBySeries.set(seriesTag, []);
-      releasesBySeries.get(seriesTag)!.push(release);
-    });
-
-  // Sort releases inside each series by status (past → current → upcoming)
-  for (const [_, releases] of releasesBySeries.entries()) {
-    releases.sort((a, b) => {
-      const order = { past: 1, current: 2, upcoming: 3 };
-      return (order[a.status] || 0) - (order[b.status] || 0);
-    });
-  }
-
-  // Convert map to array of wheels – show at most 4 wheels (can be increased)
-  const wheels = Array.from(releasesBySeries.entries()).slice(0, 4);
-
-  // 3. Stats counts
   const totalDrops = publishedItems.filter(
     (item) =>
       item.type === "release" || item.type === "event" || item.type === "anime" || item.type === "comicon"
@@ -164,16 +191,11 @@ export default async function HomePage() {
     (item) => item.target_timestamp && new Date(item.target_timestamp) > new Date()
   ).length;
 
-  // 4. Upcoming drops (any item with target_timestamp in the future, sorted)
   const upcomingItems = publishedItems
-    .filter((item) => {
-      if (!item.target_timestamp) return false;
-      return new Date(item.target_timestamp) > new Date();
-    })
+    .filter((item) => item.target_timestamp && new Date(item.target_timestamp) > new Date())
     .sort((a, b) => new Date(a.target_timestamp).getTime() - new Date(b.target_timestamp).getTime())
     .slice(0, 12);
 
-  // 5. Curated releases – high quality or explicitly routed
   const curatedReleases = publishedItems
     .filter((item) => {
       const route = item.metadata?.section_route;
@@ -189,7 +211,6 @@ export default async function HomePage() {
     })
     .slice(0, 6);
 
-  // 6. Hologram cards – from DB only
   const holoCards: HoloCardProps[] = publishedItems
     .filter((item) => ["release", "game", "anime", "comicon"].includes(item.type))
     .slice(0, 20)
@@ -222,7 +243,6 @@ export default async function HomePage() {
       };
     });
 
-  // 7. Vertical counts (for "What we track" section)
   const countByVertical = {
     games: publishedItems.filter((i) => i.type === "release" || i.type === "game").length,
     anime: publishedItems.filter((i) => i.type === "anime").length,
@@ -247,7 +267,6 @@ export default async function HomePage() {
       />
 
       <main className="min-h-screen overflow-hidden bg-zinc-950">
-        {/* Hero */}
         <Hero
           activeVertical={activeVertical}
           title="What's ending soon?"
@@ -259,7 +278,6 @@ export default async function HomePage() {
           className="min-h-[620px] sm:min-h-[680px]"
         />
 
-        {/* Stats bar */}
         <section aria-label="Platform statistics" className="border-y border-white/10 bg-zinc-950/95">
           <div className="mx-auto grid max-w-7xl gap-4 px-4 py-5 sm:grid-cols-3 md:px-6">
             <MiniStat value={`${totalDrops}`} label="tracked drops" />
@@ -268,7 +286,7 @@ export default async function HomePage() {
           </div>
         </section>
 
-        {/* Countdowns – Dynamic ReleaseWheels */}
+        {/* Countdown Wheels - now fully driven by franchises & releases */}
         <section
           id="countdowns"
           aria-labelledby="countdowns-heading"
@@ -280,31 +298,27 @@ export default async function HomePage() {
             copy="Browse the series timelines. Track past launches, current updates, and upcoming rollouts with active countdowns."
           />
 
-          {wheels.length > 0 ? (
+          {wheelsData.length > 0 ? (
             <div className="grid gap-y-8 gap-x-6 lg:grid-cols-2">
-              {wheels.map(([seriesTag, releases]) => {
-                // Derive poster/title from seriesTag or first release's metadata
-                const posterTitle = seriesTag.replace("-series", "").toUpperCase();
-                const eyebrow = seriesTag.replace("-series", "").replace(/-/g, " ");
-                // Use a default poster; you could also store a poster_url in metadata
-                return (
-                  <ReleaseWheel
-                    key={seriesTag}
-                    posterSrc="/assets/bo6_poster.png" // Replace with dynamic if needed
-                    posterAlt={posterTitle}
-                    eyebrow={eyebrow}
-                    posterTitle={posterTitle}
-                    releases={releases}
-                  />
-                );
-              })}
+              {wheelsData.map(({ franchise, releases }) => (
+                <ReleaseWheel
+                  key={franchise.id}
+                  posterSrc={franchise.poster_url}
+                  posterAlt={franchise.poster_alt}
+                  eyebrow={franchise.eyebrow}
+                  posterTitle={getPosterTitle(franchise.slug)}
+                  releases={releases}
+                />
+              ))}
             </div>
           ) : (
-            <p className="text-white/50 text-center py-12">No releases found. Add some in the CMS.</p>
+            <p className="text-white/50 text-center py-12">
+              No releases found. Add franchises and releases to get started.
+            </p>
           )}
         </section>
 
-        {/* What we track */}
+        {/* Everything below remains exactly as before – uses content_items */}
         <section
           id="track"
           aria-labelledby="track-heading"
@@ -337,7 +351,6 @@ export default async function HomePage() {
           </div>
         </section>
 
-        {/* Upcoming drops */}
         <section
           aria-labelledby="upcoming-heading"
           className="mx-auto max-w-7xl px-4 py-12 sm:py-16 md:px-6"
@@ -401,7 +414,6 @@ export default async function HomePage() {
           )}
         </section>
 
-        {/* Curated Releases */}
         <section
           aria-labelledby="curated-heading"
           className="bg-white/[0.01] border-y border-white/5 py-12 sm:py-16"
@@ -496,7 +508,6 @@ export default async function HomePage() {
           </div>
         </section>
 
-        {/* Hologram Roster */}
         <section
           id="roster"
           aria-labelledby="roster-heading"
@@ -513,7 +524,6 @@ export default async function HomePage() {
           </div>
         </section>
 
-        {/* Notes (still static because they are generic tips) */}
         <section
           id="notes"
           aria-labelledby="notes-heading"

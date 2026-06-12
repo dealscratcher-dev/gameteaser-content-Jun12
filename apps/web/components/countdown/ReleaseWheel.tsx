@@ -6,7 +6,7 @@ import { useEffect, useRef, useState } from "react";
 import { useCountdown } from "@/components/countdown/CountdownDisplay";
 
 export interface Release {
-  id: number;
+  id: string;                     // ✅ changed from number to string (UUID)
   title: string;
   short: string;
   status: "past" | "current" | "upcoming";
@@ -92,7 +92,6 @@ function GameBadge({ release, size = "md" }: { release: Release; size?: "sm" | "
       position: "relative",
       overflow: "hidden"
     }}>
-      {/* Tiny brand label */}
       <span style={{
         fontSize: brandTextSize,
         fontWeight: 800,
@@ -105,7 +104,6 @@ function GameBadge({ release, size = "md" }: { release: Release; size?: "sm" | "
       }}>
         {theme.brand === "BLACK OPS" ? "COD" : theme.brand === "MODERN WARFARE" ? "COD" : theme.brand}
       </span>
-      {/* Main short code */}
       <span style={{
         fontSize: logoTextSize,
         fontWeight: 950,
@@ -116,7 +114,6 @@ function GameBadge({ release, size = "md" }: { release: Release; size?: "sm" | "
       }}>
         {release.short.toUpperCase()}
       </span>
-      {/* Corner accent */}
       <div style={{
         position: "absolute",
         bottom: 0,
@@ -167,28 +164,24 @@ function CountdownDigits({ unit, urgent, themeColor }: { unit: any; urgent: bool
 
   return (
     <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-      {/* Days */}
       <div style={{ display: "flex", flexDirection: "column", alignItems: "center", width: 32 }}>
         <span style={digitStyle}>{pad(unit.days)}</span>
         <span style={labelStyle}>DAYS</span>
       </div>
       <span style={separatorStyle}>:</span>
       
-      {/* Hours */}
       <div style={{ display: "flex", flexDirection: "column", alignItems: "center", width: 32 }}>
         <span style={digitStyle}>{pad(unit.hours)}</span>
         <span style={labelStyle}>HRS</span>
       </div>
       <span style={separatorStyle}>:</span>
       
-      {/* Minutes */}
       <div style={{ display: "flex", flexDirection: "column", alignItems: "center", width: 32 }}>
         <span style={digitStyle}>{pad(unit.minutes)}</span>
         <span style={labelStyle}>MINS</span>
       </div>
       <span style={separatorStyle}>:</span>
       
-      {/* Seconds */}
       <div style={{ display: "flex", flexDirection: "column", alignItems: "center", width: 32 }}>
         <span style={digitStyle}>{pad(unit.seconds)}</span>
         <span style={labelStyle}>SECS</span>
@@ -275,7 +268,6 @@ function ActiveCard({ release }: { release: Release }) {
         cursor: "default"
       }}
     >
-      {/* Background glow accent */}
       <div style={{
         position: "absolute",
         top: -30,
@@ -287,7 +279,6 @@ function ActiveCard({ release }: { release: Release }) {
         pointerEvents: "none"
       }} />
 
-      {/* Top Row: Badge + Info */}
       <div style={{ display: "flex", alignItems: "center", gap: 10, zIndex: 2 }}>
         <GameBadge release={release} />
         <div style={{ display: "flex", flexDirection: "column", minWidth: 0, flex: 1 }}>
@@ -318,7 +309,6 @@ function ActiveCard({ release }: { release: Release }) {
         </div>
       </div>
 
-      {/* Middle Row: Subtitle & Countdown */}
       <div style={{ display: "flex", flexDirection: "column", alignItems: "center", zIndex: 2, margin: "10px 0" }}>
         <span style={{
           fontSize: 8,
@@ -348,7 +338,6 @@ function ActiveCard({ release }: { release: Release }) {
         )}
       </div>
 
-      {/* Bottom Row: Urgency Text */}
       <div style={{ 
         display: "flex", 
         justifyContent: "center", 
@@ -477,7 +466,7 @@ export default function ReleaseWheel({
   return (
     <div className="grid grid-cols-1 md:grid-cols-[45fr_55fr] gap-6 w-full max-w-[600px] h-auto md:h-[532px] bg-[#0a0a0a] rounded-[20px] p-4 border border-white/5 shadow-[0_20px_50px_rgba(0,0,0,0.9)] mx-auto overflow-hidden">
 
-      {/* ── Poster (Left Column) ── */}
+      {/* Poster */}
       <div className="relative w-full h-[320px] md:h-[500px] rounded-[18px] overflow-hidden border border-white/5 shadow-md flex-shrink-0">
         <img src={posterSrc} alt={posterAlt}
           style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover" }} />
@@ -495,7 +484,7 @@ export default function ReleaseWheel({
         </div>
       </div>
 
-      {/* ── Reel (Right Column) ── */}
+      {/* Reel */}
       <div
         ref={reelRef}
         className="relative w-full h-[500px] flex-shrink-0 overflow-hidden"
@@ -507,11 +496,9 @@ export default function ReleaseWheel({
           if (diff < 0 && !atTop)   prev();
         }}
       >
-        {/* Navigation chevrons */}
         <ChevronUp onClick={prev} disabled={atTop} />
         <ChevronDown onClick={next} disabled={atBottom} />
 
-        {/* Fades */}
         <div style={{
           position: "absolute", top: 0, left: 0, right: 0, height: 85,
           background: "linear-gradient(to bottom, #0a0a0a 0%, transparent 100%)",
@@ -523,7 +510,6 @@ export default function ReleaseWheel({
           pointerEvents: "none", zIndex: 20,
         }} />
 
-        {/* Centre lane indicator lines */}
         <div style={{
           position: "absolute", left: "calc(50% - 125px)", width: 250,
           top: CENTER_Y - ACTIVE_H / 2 - 2,
@@ -534,7 +520,6 @@ export default function ReleaseWheel({
           pointerEvents: "none", zIndex: 1,
         }} />
 
-        {/* Items */}
         {releases.map((release, index) => {
           const offset  = index - selected;
           const active  = offset === 0;
