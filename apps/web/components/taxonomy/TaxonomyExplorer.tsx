@@ -618,10 +618,13 @@ export function TaxonomyExplorer({ initialType = 'categories' }: TaxonomyExplore
                             <p className="vhs-section-label">— trending now —</p>
                             <div className="vhs-tag-cloud">
                                 {tags.map(tag => {
-                                    const min   = Math.min(...tags.map(t => t.count ?? 1));
-                                    const max   = Math.max(...tags.map(t => t.count ?? 1));
+                                    // TypeScript fix: cast to any because TaxonomyTag may not have 'count'
+                                    const tagAny = tag as any;
+                                    const counts = tags.map(t => (t as any).count ?? 1);
+                                    const min   = Math.min(...counts);
+                                    const max   = Math.max(...counts);
                                     const range = max - min || 1;
-                                    const size  = 11 + Math.round((((tag.count ?? min) - min) / range) * 11);
+                                    const size  = 11 + Math.round((((tagAny.count ?? min) - min) / range) * 11);
                                     return (
                                         <Link key={tag.id} href={`/tag/${tag.slug}`} className="vhs-tag" style={{ fontSize: `${size}px` }}>
                                             {tag.name}
