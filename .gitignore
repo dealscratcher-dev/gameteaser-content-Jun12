@@ -63,3 +63,7 @@ Icon
 # Vercel / Netlify
 .vercel/
 .netlify/
+
+# OpenNext build output
+.open-next/
+**/.open-next/
