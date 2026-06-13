@@ -1,1 +1,0 @@
-echo "22.16.0" > .node-version
