@@ -3,25 +3,71 @@
 import { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
 import { ContentCategory, Genre, TaxonomyTag } from '@/lib/taxonomy/types';
-import { GenrePill } from './GenrePill';
-import { TagCloud } from './TagCloud';
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Requires in globals.css:
+//   @import url('https://fonts.googleapis.com/css2?family=Kalam:wght@400;700&family=IBM+Plex+Mono:wght@400;600&display=swap');
+// ─────────────────────────────────────────────────────────────────────────────
 
 interface TaxonomyExplorerProps {
     initialType?: 'categories' | 'genres' | 'tags';
 }
 
-// ── Safe empty defaults so .map() never receives undefined ────────────────────
 const EMPTY_CATEGORIES: ContentCategory[] = [];
 const EMPTY_GENRES: Genre[]               = [];
 const EMPTY_TAGS: TaxonomyTag[]           = [];
 
 type ActiveType = 'categories' | 'genres' | 'tags';
 
-const TYPES: { id: ActiveType; label: string; icon: string }[] = [
-    { id: 'categories', label: 'Categories',    icon: '📁' },
-    { id: 'genres',     label: 'Genres',        icon: '🎭' },
-    { id: 'tags',       label: 'Trending Tags', icon: '🏷️' },
+const TYPES: { id: ActiveType; label: string }[] = [
+    { id: 'categories', label: 'Categories' },
+    { id: 'genres',     label: 'Genres'     },
+    { id: 'tags',       label: 'Trending'   },
 ];
+
+// ── Per-category VHS brand metadata ──────────────────────────────────────────
+const CATEGORY_BRANDS: Record<string, { brand: string; accent?: string; sub?: string }> = {
+    games:       { brand: 'PlayStation',       accent: undefined             },
+    anime:       { brand: 'Bandai Visual',     accent: undefined             },
+    manga:       { brand: 'Shonen Jump',       accent: undefined             },
+    comics:      { brand: 'Marvel Archive',    accent: '#e32636', sub: 'VOL. 1' },
+    'movies-tv': { brand: 'VHS Collection',   accent: undefined             },
+};
+
+// ── Collector count labels — objects, not windows ────────────────────────────
+// Derive from category.count if your API provides it; otherwise subcategories.length
+function collectorLabel(count: number, slug: string): string {
+    if (count === 0) return 'no entries yet';
+    if (slug === 'games')    return `${count} releases`;
+    if (slug === 'anime')    return `${count} titles`;
+    if (slug === 'manga')    return `${count} volumes`;
+    if (slug === 'comics')   return `${count} issues`;
+    return `${count} entries`;
+}
+
+// ── Fake barcodes — deterministic per index ───────────────────────────────────
+const BARCODES = [
+    [2,1,3,1,2,1,2],
+    [1,3,1,2,1,3,1],
+    [2,1,1,3,2,1,2],
+    [1,2,3,1,1,2,1],
+    [3,1,2,1,1,3,1],
+];
+
+// ── Per-tape physical variation — deterministic, not random ──────────────────
+// [rotation, widthPct, labelWidthPct, heightPx, vertOffsetPx]
+const TAPE_VARIANTS: [string, string, string, number, number][] = [
+    ['-1.5deg', '100%', '55%', 80,  0],
+    [' 0.8deg',  '96%', '58%', 78,  1],
+    ['-0.7deg',  '98%', '52%', 82, -1],
+    [' 1.2deg',  '94%', '60%', 79,  0],
+    ['-0.5deg',  '99%', '54%', 81,  1],
+];
+
+// ── SVG scratch overlay — pure CSS, no external PNG needed ───────────────────
+// Rendered as a data URI background on each tape via ::after
+// opacity .07 + overlay blending — subconscious wear, not a theme
+const SCRATCH_SVG = `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='80'%3E%3Cline x1='12' y1='0' x2='8' y2='80' stroke='white' stroke-width='0.4' opacity='0.6'/%3E%3Cline x1='45' y1='0' x2='48' y2='80' stroke='white' stroke-width='0.3' opacity='0.4'/%3E%3Cline x1='78' y1='20' x2='76' y2='80' stroke='white' stroke-width='0.5' opacity='0.5'/%3E%3Cline x1='130' y1='0' x2='134' y2='60' stroke='white' stroke-width='0.3' opacity='0.3'/%3E%3Cline x1='160' y1='10' x2='158' y2='80' stroke='white' stroke-width='0.4' opacity='0.4'/%3E%3Cline x1='188' y1='0' x2='185' y2='45' stroke='white' stroke-width='0.6' opacity='0.5'/%3E%3C/svg%3E")`;
 
 export function TaxonomyExplorer({ initialType = 'categories' }: TaxonomyExplorerProps) {
     const [activeType, setActiveType] = useState<ActiveType>(initialType);
@@ -34,44 +80,18 @@ export function TaxonomyExplorer({ initialType = 'categories' }: TaxonomyExplore
     const fetchTaxonomy = useCallback(async () => {
         setLoading(true);
         setError(null);
-
         try {
             const response = await fetch(`/api/taxonomy?type=${activeType}`);
-
-            // ── BUG 5 FIX: surface the server's error body in development ──
-            //
-            // ORIGINAL PROBLEM:
-            //   When !response.ok the code threw `"API returned 500: Internal
-            //   Server Error"` — the generic HTTP status text. The actual server
-            //   error message inside the JSON body (`{ error: "..." }`) was
-            //   discarded, making the root cause invisible in the browser console.
-            //
-            // FIX: attempt to parse the error body and include the server's
-            //   message in the thrown Error so it appears in the console and
-            //   (in dev) in the UI's error state, pointing straight at the
-            //   real problem (e.g. "wrong env var", "Supabase auth failed").
-            // ─────────────────────────────────────────────────────────────────
             if (!response.ok) {
                 let serverMessage = response.statusText;
                 try {
                     const errBody = await response.json() as { error?: string };
                     if (errBody?.error) serverMessage = errBody.error;
-                } catch {
-                    // body wasn't JSON — keep statusText
-                }
+                } catch { /* keep statusText */ }
                 throw new Error(`API ${response.status}: ${serverMessage}`);
             }
-
             const json = await response.json();
-
-            // ── Defensive: accept both { data: [] } and [] directly ────────
-            const data: unknown = Array.isArray(json)
-                ? json
-                : Array.isArray(json?.data)
-                    ? json.data
-                    : [];
-
-            // ── Type-safe assignment per active tab ────────────────────────
+            const data: unknown = Array.isArray(json) ? json : Array.isArray(json?.data) ? json.data : [];
             if (activeType === 'categories') {
                 setCategories(Array.isArray(data) ? (data as ContentCategory[]) : EMPTY_CATEGORIES);
             } else if (activeType === 'genres') {
@@ -88,174 +108,536 @@ export function TaxonomyExplorer({ initialType = 'categories' }: TaxonomyExplore
         }
     }, [activeType]);
 
-    useEffect(() => {
-        fetchTaxonomy();
-    }, [fetchTaxonomy]);
+    useEffect(() => { fetchTaxonomy(); }, [fetchTaxonomy]);
 
-    // ── BUG 6 FIX: clear stale data when switching tabs ───────────────────────
-    //
-    // ORIGINAL PROBLEM:
-    //   Switching from 'categories' → 'genres' left the previous categories
-    //   array populated during the loading phase of the genres fetch. If the
-    //   genres fetch failed, `isEmpty` evaluated to true for genres while
-    //   `categories.length > 0` was still true, so both the empty-state banner
-    //   AND the old categories grid rendered simultaneously.
-    //
-    // FIX: reset the stale tab's state the moment the user switches, so the
-    //   loading skeleton is the only thing visible during the new fetch.
-    // ─────────────────────────────────────────────────────────────────────────
     const handleTypeChange = useCallback((next: ActiveType) => {
         if (next === activeType) return;
-        // Reset whichever tab we're leaving so stale data doesn't bleed through
         if (activeType === 'categories') setCategories(EMPTY_CATEGORIES);
         else if (activeType === 'genres') setGenres(EMPTY_GENRES);
         else                              setTags(EMPTY_TAGS);
         setActiveType(next);
     }, [activeType]);
 
-    // ── Derived state ─────────────────────────────────────────────────────────
     const isEmpty =
-        !loading &&
-        !error &&
+        !loading && !error &&
         ((activeType === 'categories' && categories.length === 0) ||
          (activeType === 'genres'     && genres.length     === 0) ||
          (activeType === 'tags'       && tags.length       === 0));
 
     return (
-        <div className="overflow-hidden rounded-lg bg-gray-900">
+        <>
+            <style>{`
+                /* ── Outer wrap — warm bedroom lamp glow ────────────────────── */
+                .vhs-shelf-wrap {
+                    background:
+                        radial-gradient(circle at top, rgba(255,180,80,.08), transparent 40%),
+                        #0e0b08;
+                    border-radius: 12px;
+                    padding: 0;
+                    position: relative;
+                    overflow: hidden;
+                }
 
-            {/* ── Type selector ─────────────────────────────────────────── */}
-            <div className="border-b border-gray-800 p-3 sm:p-4">
-                <div className="flex gap-2 overflow-x-auto pb-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden sm:flex-wrap sm:overflow-visible sm:pb-0">
+                /* ── Index-card tabs ────────────────────────────────────────── */
+                .vhs-tabs {
+                    display: flex;
+                    gap: 0;
+                    padding: 20px 24px 0;
+                    position: relative;
+                    z-index: 2;
+                    align-items: flex-end;
+                }
+                .vhs-tab {
+                    font-family: 'Kalam', cursive;
+                    font-size: 13px;
+                    font-weight: 700;
+                    letter-spacing: 0.03em;
+                    cursor: pointer;
+                    border: none;
+                    background: none;
+                    outline: none;
+                    position: relative;
+                    padding: 0;
+                    margin-right: 2px;
+                }
+                .vhs-tab-inner {
+                    display: block;
+                    padding: 8px 18px 12px;
+                    background: #1e1810;
+                    color: #5a4a35;
+                    border: 1px solid #2e2415;
+                    border-bottom: none;
+                    border-radius: 5px 5px 0 0;
+                    position: relative;
+                    top: 3px;
+                    transition: background 0.15s, color 0.15s, top 0.15s;
+                }
+                .vhs-tab:nth-child(2) .vhs-tab-inner { padding-top: 10px; }
+                .vhs-tab:nth-child(3) .vhs-tab-inner { padding-top:  7px; }
+                .vhs-tab[aria-pressed="true"] .vhs-tab-inner {
+                    background: #f5ecd4;
+                    color: #1e0f04;
+                    top: 0;
+                    border-color: #c4a96e;
+                    border-bottom: 1px solid #f5ecd4;
+                    box-shadow: 0 -4px 12px rgba(0,0,0,.5), inset 0 1px rgba(255,255,255,.6);
+                }
+                .vhs-tab:not([aria-pressed="true"]):hover .vhs-tab-inner {
+                    background: #2a2015;
+                    color: #8a7a60;
+                }
+                .vhs-tab[aria-pressed="true"] .vhs-tab-inner::after {
+                    content: '';
+                    position: absolute;
+                    top: 0; right: 0;
+                    width: 10px; height: 10px;
+                    background: linear-gradient(135deg, transparent 50%, #d4c49a 50%);
+                }
+
+                /* ── Shelf body — warm wood gradient, not flat black ─────────── */
+                .vhs-body {
+                    background: linear-gradient(180deg, #1a140d 0%, #120d08 100%);
+                    border: 1px solid #2e2415;
+                    border-radius: 0 6px 6px 6px;
+                    margin: 0 20px 20px;
+                    padding: 28px 24px 52px;
+                    position: relative;
+                    /* subtle wood grain via repeating diagonal lines */
+                    background-image:
+                        linear-gradient(180deg, #1a140d 0%, #120d08 100%),
+                        repeating-linear-gradient(
+                            92deg,
+                            transparent,
+                            transparent 18px,
+                            rgba(255,200,100,.012) 18px,
+                            rgba(255,200,100,.012) 19px
+                        );
+                    background-blend-mode: normal, overlay;
+                }
+                /* cabinet depth */
+                .vhs-body::before {
+                    content: '';
+                    position: absolute;
+                    inset: 0;
+                    background:
+                        linear-gradient(
+                            90deg,
+                            rgba(255,255,255,.025),
+                            transparent 18%,
+                            transparent 82%,
+                            rgba(0,0,0,.22)
+                        );
+                    pointer-events: none;
+                    border-radius: 0 6px 6px 6px;
+                }
+
+                /* ── Shelf planks ── */
+                .vhs-shelf-planks {
+                    position: absolute;
+                    bottom: 0; left: 0; right: 0;
+                }
+                .vhs-shelf-plank { height: 5px; background: #3a2818; margin-bottom: 2px; }
+                .vhs-shelf-plank:last-child { margin-bottom: 0; }
+
+                /* ── Tape stack — tight overlap like a real shelf ─────────────── */
+                .vhs-tape-stack {
+                    display: flex;
+                    flex-direction: column;
+                    gap: 0;          /* no gap — tapes touch */
+                }
+
+                .vhs-tape {
+                    position: relative;
+                    display: flex;
+                    align-items: center;
+                    background: #0d0a06;
+                    border: 1.5px solid #4a3820;
+                    padding: 0 20px;
+                    cursor: pointer;
+                    border-radius: 2px;
+                    text-decoration: none;
+                    margin-top: -2px; /* slight overlap — stacked, not floating */
+                    transition:
+                        transform 0.28s cubic-bezier(.15,.85,.35,1),
+                        box-shadow 0.28s ease;
+                    outline: none;
+                }
+                /* scratch wear overlay — pure SVG, no external file */
+                .vhs-tape::after {
+                    content: '';
+                    position: absolute;
+                    inset: 0;
+                    background-image: ${SCRATCH_SVG};
+                    background-repeat: repeat-x;
+                    background-size: 200px 100%;
+                    opacity: .07;
+                    mix-blend-mode: overlay;
+                    pointer-events: none;
+                    border-radius: 2px;
+                }
+                .vhs-tape:first-child { margin-top: 0; }
+                .vhs-tape:hover,
+                .vhs-tape:focus-visible {
+                    transform: translateX(24px) scale(1.02) rotate(0deg) !important;
+                    box-shadow: -12px 6px 32px rgba(0,0,0,.95);
+                    z-index: 10;
+                    border-color: #7a6040;
+                    /* darken the implied depth behind it */
+                    background: #100c08;
+                }
+
+                /* ── Cream label — stamped feel, not centered UI ─────────────── */
+                .vhs-tape-label {
+                    position: absolute;
+                    left: 12px; top: 50%;
+                    transform: translateY(-50%);
+                    height: 58px;
+                    border-radius: 1px;
+                    display: flex;
+                    align-items: center;
+                    /* stamp layout: icon pushed far left, name breathes right */
+                    padding: 0 16px 0 12px;
+                    gap: 18px;
+                    overflow: hidden;
+                    background:
+                        linear-gradient(rgba(255,255,255,.08), rgba(0,0,0,.04)),
+                        #ede3c5;
+                    box-shadow:
+                        inset 0 1px rgba(255,255,255,.4),
+                        inset 0 -2px rgba(0,0,0,.08);
+                }
+                /* torn right edge */
+                .vhs-tape-label::after {
+                    content: '';
+                    position: absolute;
+                    right: -3px; top: 0; bottom: 0;
+                    width: 6px;
+                    background: linear-gradient(to right, #d4c9a0, #b8a87a, transparent);
+                    clip-path: polygon(0 0, 60% 8%, 100% 3%, 80% 22%, 100% 40%, 70% 55%, 100% 70%, 80% 88%, 100% 100%, 0 100%);
+                }
+
+                /* icon — stamped, slightly oversized relative to text */
+                .vhs-tape-icon {
+                    font-size: 28px;
+                    flex-shrink: 0;
+                    /* pushed to the far-left edge of the label, like a rubber stamp */
+                    margin-left: -2px;
+                    opacity: .9;
+                }
+
+                /* fat Sharpie */
+                .vhs-tape-name {
+                    font-family: 'Kalam', cursive;
+                    font-weight: 700;
+                    font-size: 26px;
+                    color: #150900;
+                    letter-spacing: 0.08em;
+                    text-transform: uppercase;
+                    line-height: 1;
+                    white-space: nowrap;
+                    overflow: hidden;
+                    text-overflow: ellipsis;
+                }
+                .vhs-tape-count {
+                    font-family: 'IBM Plex Mono', monospace;
+                    font-size: 10px;
+                    color: #6b5a3a;
+                    margin-top: 4px;
+                    letter-spacing: 0.05em;
+                }
+
+                /* ── Brand spine ── */
+                .vhs-tape-brand {
+                    position: absolute;
+                    right: 16px; top: 50%;
+                    transform: translateY(-50%);
+                    text-align: right;
+                }
+                .vhs-tape-brand-name {
+                    font-family: 'IBM Plex Mono', monospace;
+                    font-size: 10px;
+                    color: #b7a68f;
+                    letter-spacing: 0.14em;
+                    text-transform: uppercase;
+                    display: block;
+                }
+                .vhs-tape-brand-sub {
+                    font-family: 'IBM Plex Mono', monospace;
+                    font-size: 9px;
+                    letter-spacing: 0.1em;
+                    color: #8a7a65;
+                    margin-top: 2px;
+                    display: block;
+                }
+                .vhs-tape-barcode { display: flex; gap: 1px; margin-top: 7px; justify-content: flex-end; }
+                .vhs-tape-barcode span { background: #5a4a35; display: block; height: 14px; }
+
+                /* ── Genre pills ── */
+                .vhs-genre-section { padding: 4px 0; }
+                .vhs-genre-cloud { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 28px; }
+                .vhs-genre-pill {
+                    font-family: 'Kalam', cursive;
+                    font-weight: 700; font-size: 16px;
+                    padding: 7px 18px; border-radius: 20px;
+                    border: 1.5px solid #4a3820;
+                    background: #1a1208; color: #d4c49a;
+                    cursor: pointer; transition: background 0.15s, color 0.15s, border-color 0.15s;
+                    text-decoration: none; display: inline-block; outline: none;
+                }
+                .vhs-genre-pill:hover, .vhs-genre-pill:focus-visible {
+                    background: #2a1e0c; color: #f1e2bc; border-color: #7a6040;
+                }
+                .vhs-genre-subgroup { margin-bottom: 20px; }
+                .vhs-genre-subgroup-label {
+                    font-family: 'IBM Plex Mono', monospace;
+                    font-size: 10px; letter-spacing: 0.3em; text-transform: uppercase;
+                    color: #5a4a35; margin-bottom: 10px;
+                }
+                .vhs-genre-sub-pills { display: flex; flex-wrap: wrap; gap: 8px; }
+                .vhs-genre-pill-sm {
+                    font-family: 'Kalam', cursive;
+                    font-weight: 400; font-size: 14px;
+                    padding: 4px 14px; border-radius: 16px;
+                    border: 1px solid #3a2d1e; background: #131008; color: #9d8c6e;
+                    cursor: pointer; transition: background 0.15s, color 0.15s;
+                    text-decoration: none; display: inline-block; outline: none;
+                }
+                .vhs-genre-pill-sm:hover, .vhs-genre-pill-sm:focus-visible {
+                    background: #2a1e0c; color: #d4c49a;
+                }
+
+                /* ── Tag cloud ── */
+                .vhs-tag-cloud { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding: 4px 0; }
+                .vhs-tag {
+                    font-family: 'IBM Plex Mono', monospace;
+                    background: #1a1208; border: 1px solid #3a2d1e; color: #9d8c6e;
+                    padding: 4px 10px; border-radius: 3px;
+                    cursor: pointer; transition: background 0.15s, color 0.15s;
+                    text-decoration: none; display: inline-block; outline: none;
+                }
+                .vhs-tag:hover, .vhs-tag:focus-visible {
+                    background: #2a1e0c; color: #d4c49a; border-color: #5a4a35;
+                }
+
+                /* ── Loading skeleton ── */
+                .vhs-skeleton-stack { display: flex; flex-direction: column; gap: 0; }
+                .vhs-skeleton-tape {
+                    border-radius: 2px; background: #1d1610;
+                    margin-top: -2px;
+                    animation: vhs-pulse 1.4s ease-in-out infinite;
+                }
+                .vhs-skeleton-tape:first-child { margin-top: 0; }
+                @keyframes vhs-pulse { 0%,100% { opacity:1; } 50% { opacity:.4; } }
+
+                /* ── Error / empty ── */
+                .vhs-state-center {
+                    display: flex; flex-direction: column; align-items: center;
+                    gap: 14px; padding: 56px 0; text-align: center;
+                }
+                .vhs-state-icon { font-size: 40px; }
+                .vhs-state-msg {
+                    font-family: 'IBM Plex Mono', monospace;
+                    font-size: 12px; color: #5a4a35; letter-spacing: 0.06em;
+                }
+                .vhs-retry-btn {
+                    font-family: 'Kalam', cursive; font-weight: 700; font-size: 14px;
+                    padding: 8px 22px; background: #2a1e0c;
+                    border: 1.5px solid #7a6040; border-radius: 4px; color: #d4c49a;
+                    cursor: pointer; transition: background 0.15s, color 0.15s; outline: none;
+                }
+                .vhs-retry-btn:hover, .vhs-retry-btn:focus-visible {
+                    background: #3a2d18; color: #f1e2bc;
+                }
+
+                /* ── Section label ── */
+                .vhs-section-label {
+                    font-family: 'IBM Plex Mono', monospace;
+                    font-size: 10px; letter-spacing: 0.3em; text-transform: uppercase;
+                    color: #5a4a35; margin-bottom: 18px;
+                }
+            `}</style>
+
+            <div className="vhs-shelf-wrap">
+
+                {/* ── Index-card tabs ────────────────────────────────────────── */}
+                <div className="vhs-tabs">
                     {TYPES.map(type => (
                         <button
                             key={type.id}
-                            onClick={() => handleTypeChange(type.id)}
+                            className="vhs-tab"
                             aria-pressed={activeType === type.id}
-                            className={`min-h-11 shrink-0 rounded-lg px-4 py-2 font-medium transition-all ${
-                                activeType === type.id
-                                    ? 'bg-blue-600 text-white'
-                                    : 'text-gray-400 hover:text-white hover:bg-gray-800'
-                            }`}
+                            onClick={() => handleTypeChange(type.id)}
                         >
-                            <span className="mr-2">{type.icon}</span>
-                            {type.label}
+                            <span className="vhs-tab-inner">{type.label}</span>
                         </button>
                     ))}
                 </div>
-            </div>
 
-            {/* ── Content ───────────────────────────────────────────────── */}
-            <div className="p-4 sm:p-6">
+                {/* ── Shelf body ──────────────────────────────────────────────── */}
+                <div className="vhs-body">
 
-                {/* Loading skeleton */}
-                {loading && (
-                    <div className="grid grid-cols-1 gap-4 min-[380px]:grid-cols-2 md:grid-cols-4">
-                        {Array.from({ length: 8 }).map((_, i) => (
-                            <div key={i} className="bg-gray-800 rounded-lg p-4 animate-pulse">
-                                <div className="h-12 w-12 bg-gray-700 rounded-full mx-auto mb-3" />
-                                <div className="h-4 bg-gray-700 rounded w-3/4 mx-auto" />
-                            </div>
-                        ))}
-                    </div>
-                )}
-
-                {/* Error state */}
-                {!loading && error && (
-                    <div className="flex flex-col items-center gap-4 py-12 text-center">
-                        <span className="text-4xl">⚠️</span>
-                        <p className="text-gray-400 text-sm">{error}</p>
-                        <button
-                            onClick={fetchTaxonomy}
-                            className="px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded-lg text-sm font-medium transition"
-                        >
-                            Retry
-                        </button>
-                    </div>
-                )}
-
-                {/* Empty state */}
-                {isEmpty && (
-                    <div className="flex flex-col items-center gap-3 py-12 text-center">
-                        <span className="text-4xl">🗂️</span>
-                        <p className="text-gray-400 text-sm">No {activeType} found.</p>
-                    </div>
-                )}
-
-                {/* Categories */}
-                {!loading && !error && activeType === 'categories' && categories.length > 0 && (
-                    <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
-                        {categories.map(category => (
-                            <Link
-                                key={category.id}
-                                href={`/category/${category.slug}`}
-                                className="group block rounded-lg bg-gray-800 p-4 transition-all hover:bg-gray-700"
-                            >
-                                <div className="flex items-start gap-3">
-                                    <div className="shrink-0 text-3xl">{category.icon}</div>
-                                    <div className="min-w-0 flex-1">
-                                        <h3 className="font-semibold text-lg group-hover:text-blue-400 transition">
-                                            {category.name}
-                                        </h3>
-                                        {category.description && (
-                                            <p className="text-sm text-gray-400 mt-1 line-clamp-2">
-                                                {category.description}
-                                            </p>
-                                        )}
-                                        {(category.subcategories?.length ?? 0) > 0 && (
-                                            <div className="flex flex-wrap gap-2 mt-3">
-                                                {category.subcategories!.slice(0, 3).map(sub => (
-                                                    <span
-                                                        key={sub.id}
-                                                        className="text-xs px-2 py-1 bg-gray-700 rounded-full text-gray-300"
-                                                    >
-                                                        {sub.name}
-                                                    </span>
-                                                ))}
-                                                {category.subcategories!.length > 3 && (
-                                                    <span className="text-xs px-2 py-1 text-gray-400">
-                                                        +{category.subcategories!.length - 3} more
-                                                    </span>
-                                                )}
-                                            </div>
-                                        )}
-                                    </div>
-                                </div>
-                            </Link>
-                        ))}
-                    </div>
-                )}
-
-                {/* Genres */}
-                {!loading && !error && activeType === 'genres' && genres.length > 0 && (
-                    <div>
-                        <div className="flex flex-wrap gap-3 mb-8">
-                            {genres.map(genre => (
-                                <GenrePill key={genre.id} genre={genre} size="lg" />
+                    {/* Loading skeleton */}
+                    {loading && (
+                        <div className="vhs-skeleton-stack">
+                            {TAPE_VARIANTS.map(([rot, w, , h, vy], i) => (
+                                <div
+                                    key={i}
+                                    className="vhs-skeleton-tape"
+                                    style={{
+                                        width: w,
+                                        height: `${h}px`,
+                                        transform: `rotate(${rot}) translateY(${vy}px)`,
+                                        animationDelay: `${i * 0.12}s`,
+                                    }}
+                                />
                             ))}
                         </div>
-                        {genres
-                            .filter(genre => (genre.children?.length ?? 0) > 0)
-                            .map(genre => (
-                                <div key={genre.id} className="mb-6">
-                                    <h3 className="text-sm font-semibold text-gray-400 mb-3">
-                                        {genre.name} Sub-genres
-                                    </h3>
-                                    <div className="flex flex-wrap gap-2">
-                                        {genre.children!.map(child => (
-                                            <GenrePill key={child.id} genre={child} size="sm" />
-                                        ))}
-                                    </div>
-                                </div>
-                            ))}
-                    </div>
-                )}
+                    )}
 
-                {/* Tags */}
-                {!loading && !error && activeType === 'tags' && tags.length > 0 && (
-                    <TagCloud tags={tags} minSize={12} maxSize={32} />
-                )}
+                    {/* Error state */}
+                    {!loading && error && (
+                        <div className="vhs-state-center">
+                            <span className="vhs-state-icon">📼</span>
+                            <p className="vhs-state-msg">{error}</p>
+                            <button className="vhs-retry-btn" onClick={fetchTaxonomy}>
+                                Rewind &amp; retry
+                            </button>
+                        </div>
+                    )}
+
+                    {/* Empty state */}
+                    {isEmpty && (
+                        <div className="vhs-state-center">
+                            <span className="vhs-state-icon">🗂️</span>
+                            <p className="vhs-state-msg">shelf is empty — no {activeType} found</p>
+                        </div>
+                    )}
+
+                    {/* ── Categories ──────────────────────────────────────────── */}
+                    {!loading && !error && activeType === 'categories' && categories.length > 0 && (
+                        <>
+                            <p className="vhs-section-label">— your collection —</p>
+                            <div className="vhs-tape-stack">
+                                {categories.map((category, i) => {
+                                    const [rot, tapeW, labelW, h, vy] = TAPE_VARIANTS[i % TAPE_VARIANTS.length];
+                                    const brandKey = category.slug ?? category.name.toLowerCase().replace(/[^a-z0-9]+/g, '-');
+                                    const brand    = CATEGORY_BRANDS[brandKey];
+                                    const barcode  = BARCODES[i % BARCODES.length];
+                                    // collector count: prefer category.count, fall back to subcategories.length
+                                    const count    = (category as any).count ?? category.subcategories?.length ?? 0;
+                                    const slug     = category.slug ?? brandKey;
+
+                                    return (
+                                        <Link
+                                            key={category.id}
+                                            href={`/category/${category.slug}`}
+                                            className="vhs-tape"
+                                            aria-label={`${category.name} — ${count} entries`}
+                                            style={{
+                                                width: tapeW,
+                                                height: `${h}px`,
+                                                transform: `rotate(${rot}) translateY(${vy}px)`,
+                                            }}
+                                        >
+                                            {/* cream label */}
+                                            <div className="vhs-tape-label" style={{ width: labelW }}>
+                                                {category.icon && (
+                                                    <span className="vhs-tape-icon">{category.icon}</span>
+                                                )}
+                                                <div>
+                                                    <div className="vhs-tape-name">{category.name}</div>
+                                                    <div className="vhs-tape-count">
+                                                        {collectorLabel(count, slug)}
+                                                    </div>
+                                                </div>
+                                            </div>
+
+                                            {/* brand spine */}
+                                            <div className="vhs-tape-brand">
+                                                {brand ? (
+                                                    <>
+                                                        <span
+                                                            className="vhs-tape-brand-name"
+                                                            style={brand.accent ? { color: brand.accent } : undefined}
+                                                        >
+                                                            {brand.brand}
+                                                        </span>
+                                                        {brand.sub && (
+                                                            <span className="vhs-tape-brand-sub">{brand.sub}</span>
+                                                        )}
+                                                    </>
+                                                ) : (
+                                                    <span className="vhs-tape-brand-name">
+                                                        {category.name.slice(0, 10).toUpperCase()}
+                                                    </span>
+                                                )}
+                                                <div className="vhs-tape-barcode">
+                                                    {barcode.map((w, bi) => (
+                                                        <span key={bi} style={{ width: `${w}px` }} />
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        </Link>
+                                    );
+                                })}
+                            </div>
+                        </>
+                    )}
+
+                    {/* ── Genres ──────────────────────────────────────────────── */}
+                    {!loading && !error && activeType === 'genres' && genres.length > 0 && (
+                        <div className="vhs-genre-section">
+                            <p className="vhs-section-label">— by genre —</p>
+                            <div className="vhs-genre-cloud">
+                                {genres.map(genre => (
+                                    <Link key={genre.id} href={`/genre/${genre.slug}`} className="vhs-genre-pill">
+                                        {genre.name}
+                                    </Link>
+                                ))}
+                            </div>
+                            {genres
+                                .filter(genre => (genre.children?.length ?? 0) > 0)
+                                .map(genre => (
+                                    <div key={genre.id} className="vhs-genre-subgroup">
+                                        <p className="vhs-genre-subgroup-label">{genre.name} sub-genres</p>
+                                        <div className="vhs-genre-sub-pills">
+                                            {genre.children!.map(child => (
+                                                <Link key={child.id} href={`/genre/${child.slug}`} className="vhs-genre-pill-sm">
+                                                    {child.name}
+                                                </Link>
+                                            ))}
+                                        </div>
+                                    </div>
+                                ))}
+                        </div>
+                    )}
+
+                    {/* ── Tags ────────────────────────────────────────────────── */}
+                    {!loading && !error && activeType === 'tags' && tags.length > 0 && (
+                        <>
+                            <p className="vhs-section-label">— trending now —</p>
+                            <div className="vhs-tag-cloud">
+                                {tags.map(tag => {
+                                    const min   = Math.min(...tags.map(t => t.count ?? 1));
+                                    const max   = Math.max(...tags.map(t => t.count ?? 1));
+                                    const range = max - min || 1;
+                                    const size  = 11 + Math.round((((tag.count ?? min) - min) / range) * 11);
+                                    return (
+                                        <Link key={tag.id} href={`/tag/${tag.slug}`} className="vhs-tag" style={{ fontSize: `${size}px` }}>
+                                            {tag.name}
+                                        </Link>
+                                    );
+                                })}
+                            </div>
+                        </>
+                    )}
+
+                    <div className="vhs-shelf-planks">
+                        <div className="vhs-shelf-plank" />
+                        <div className="vhs-shelf-plank" />
+                    </div>
+                </div>
             </div>
-        </div>
+        </>
     );
 }

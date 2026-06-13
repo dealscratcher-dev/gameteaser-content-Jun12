@@ -59,7 +59,7 @@ export default async function PubgSeasonPage() {
         title="PUBG Mobile"
         highlight={mainEvent?.title.replace("PUBG Mobile — ", "") || "Royale Pass"}
         kicker="battlegrounds mobile"
-        tags={[{ emoji: "🪖", label: mainEvent?.title || "Royale Pass", variant: "pubg" }]}
+        tags={[{ emoji: "", label: mainEvent?.title || "Royale Pass", variant: "pubg" }]}
         ctaLabel="View Event Details"
         ctaHref={mainEvent ? `/events/${mainEvent.id}` : "/"}
       />

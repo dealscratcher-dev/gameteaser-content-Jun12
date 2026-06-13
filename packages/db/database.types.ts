@@ -504,6 +504,10 @@ export interface Database {
           updated_at: string;
           featured: boolean | null;
           metadata: Json | null;
+          // Audit trail — populated by admin server actions
+          created_by: string | null; // auth.users UUID
+          updated_by: string | null; // auth.users UUID
+          last_action: string | null; // e.g. 'approved' | 'rejected' | 'edited' | 'created'
         };
         Insert: {
           id?: string;
@@ -528,6 +532,9 @@ export interface Database {
           updated_at?: string;
           featured?: boolean | null;
           metadata?: Json | null;
+          created_by?: string | null;
+          updated_by?: string | null;
+          last_action?: string | null;
         };
         Update: {
           id?: string;
@@ -551,6 +558,8 @@ export interface Database {
           updated_at?: string;
           featured?: boolean | null;
           metadata?: Json | null;
+          updated_by?: string | null;
+          last_action?: string | null;
         };
         Relationships: [];
       };

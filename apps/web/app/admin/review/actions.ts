@@ -1,6 +1,6 @@
 "use server";
 
-import { createAdminSupabaseClient } from "@/lib/supabase";
+import { createAdminSupabaseClient, createServerSupabaseClient } from "@/lib/supabase";
 import { revalidatePath } from "next/cache";
 import type { Database } from "../../../../../packages/db/database.types";
 import type { SupabaseClient } from "@supabase/supabase-js";
@@ -9,6 +9,21 @@ import type { ContentItemRow } from "@/types";
 const getAdminClient = () => createAdminSupabaseClient() as unknown as SupabaseClient<Database>;
 
 type SectionRoute = "curated-drops" | "upcoming-drops" | "hologram-roster" | "auto";
+
+/**
+ * Returns the authenticated admin's auth UID.
+ * Uses the user-scoped server client (cookie-based) — so this only succeeds
+ * if the admin is genuinely logged in. Returns null if not authenticated.
+ */
+async function getAuthenticatedUserId(): Promise<string | null> {
+  try {
+    const supabase = await createServerSupabaseClient();
+    const { data: { user } } = await supabase.auth.getUser();
+    return user?.id ?? null;
+  } catch {
+    return null;
+  }
+}
 
 /**
  * Maps section route to content priority metadata.
@@ -38,9 +53,11 @@ function getRouteMetadata(route: SectionRoute): {
  * Bypasses RLS using the admin client.
  */
 export async function approveContent(id: string, route: SectionRoute = "auto") {
-  // TODO: Add admin authentication check once authentication is integrated.
   try {
-    const supabase = getAdminClient();
+    const [supabase, actorId] = await Promise.all([
+      Promise.resolve(getAdminClient()),
+      getAuthenticatedUserId(),
+    ]);
     const now = new Date().toISOString();
     const { featured, section_hint, priority } = getRouteMetadata(route);
 
@@ -48,6 +65,8 @@ export async function approveContent(id: string, route: SectionRoute = "auto") {
       status: "published",
       published_at: now,
       updated_at: now,
+      updated_by: actorId,
+      last_action: "approved",
       // Only write `featured` when we have an explicit value; avoids overwriting existing flags
       ...(featured !== null && { featured }),
       // Only write `metadata` for non-auto routes
@@ -71,11 +90,12 @@ export async function approveContent(id: string, route: SectionRoute = "auto") {
       return { error: updateError.message };
     }
 
-    // Insert content_reviews row with route annotation
+    // Insert content_reviews row with route annotation and reviewer identity
     const { error: reviewError } = await (supabase
       .from("content_reviews") as any)
       .insert({
         content_id: id,
+        reviewer_id: actorId,
         review_status: "approved",
         notes:
           route !== "auto"
@@ -91,7 +111,7 @@ export async function approveContent(id: string, route: SectionRoute = "auto") {
     revalidatePath("/admin/review");
     revalidatePath("/");
 
-    console.log(`[approveContent] Content ${id} approved and routed to: ${route}`);
+    console.log(`[approveContent] Content ${id} approved by ${actorId ?? "unknown"} → routed to: ${route}`);
     return { success: true, route };
   } catch (err: any) {
     console.error("[approveContent] unhandled exception:", err);
@@ -103,9 +123,11 @@ export async function approveContent(id: string, route: SectionRoute = "auto") {
  * Rejects a content draft.
  */
 export async function rejectContent(id: string) {
-  // TODO: Add admin authentication check once authentication is integrated.
   try {
-    const supabase = getAdminClient();
+    const [supabase, actorId] = await Promise.all([
+      Promise.resolve(getAdminClient()),
+      getAuthenticatedUserId(),
+    ]);
     const now = new Date().toISOString();
 
     const { error: updateError } = await (supabase
@@ -113,6 +135,8 @@ export async function rejectContent(id: string) {
       .update({
         status: "rejected",
         updated_at: now,
+        updated_by: actorId,
+        last_action: "rejected",
       })
       .eq("id", id);
 
@@ -125,6 +149,7 @@ export async function rejectContent(id: string) {
       .from("content_reviews") as any)
       .insert({
         content_id: id,
+        reviewer_id: actorId,
         review_status: "rejected",
       });
 
@@ -136,6 +161,7 @@ export async function rejectContent(id: string) {
     revalidatePath("/admin/review");
     revalidatePath("/");
 
+    console.log(`[rejectContent] Content ${id} rejected by ${actorId ?? "unknown"}`);
     return { success: true };
   } catch (err: any) {
     console.error("[rejectContent] unhandled exception:", err);
@@ -147,13 +173,15 @@ export async function rejectContent(id: string) {
  * Flags content as requiring changes, adding notes to the draft.
  */
 export async function needsChangesContent(id: string, notes: string) {
-  // TODO: Add admin authentication check once authentication is integrated.
   if (!notes.trim()) {
     return { error: "Notes are required to request changes." };
   }
 
   try {
-    const supabase = getAdminClient();
+    const [supabase, actorId] = await Promise.all([
+      Promise.resolve(getAdminClient()),
+      getAuthenticatedUserId(),
+    ]);
     const now = new Date().toISOString();
 
     const { error: updateError } = await (supabase
@@ -162,6 +190,8 @@ export async function needsChangesContent(id: string, notes: string) {
         status: "draft",
         review_notes: notes,
         updated_at: now,
+        updated_by: actorId,
+        last_action: "needs_changes",
       })
       .eq("id", id);
 
@@ -174,6 +204,7 @@ export async function needsChangesContent(id: string, notes: string) {
       .from("content_reviews") as any)
       .insert({
         content_id: id,
+        reviewer_id: actorId,
         review_status: "needs_changes",
         notes,
       });
@@ -185,6 +216,7 @@ export async function needsChangesContent(id: string, notes: string) {
 
     revalidatePath("/admin/review");
 
+    console.log(`[needsChangesContent] Content ${id} flagged for changes by ${actorId ?? "unknown"}`);
     return { success: true };
   } catch (err: any) {
     console.error("[needsChangesContent] unhandled exception:", err);
@@ -200,9 +232,11 @@ export async function updateContentDraft(
   id: string,
   changes: Partial<ContentItemRow>
 ) {
-  // TODO: Add admin authentication check once authentication is integrated.
   try {
-    const supabase = getAdminClient();
+    const [supabase, actorId] = await Promise.all([
+      Promise.resolve(getAdminClient()),
+      getAuthenticatedUserId(),
+    ]);
     const now = new Date().toISOString();
 
     // Fetch existing row so we can preserve original_source_payload
@@ -240,6 +274,8 @@ export async function updateContentDraft(
         ...changes,
         metadata: mergedMetadata,
         updated_at: now,
+        updated_by: actorId,
+        last_action: "edited",
       })
       .eq("id", id);
 
@@ -250,7 +286,7 @@ export async function updateContentDraft(
 
     revalidatePath("/admin/review");
 
-    console.log(`[updateContentDraft] Content ${id} draft updated by admin.`);
+    console.log(`[updateContentDraft] Content ${id} edited by ${actorId ?? "unknown"}`);
     return { success: true };
   } catch (err: any) {
     console.error("[updateContentDraft] unhandled exception:", err);
@@ -272,7 +308,10 @@ export async function createContentEvent(
   slug?: string
 ) {
   try {
-    const supabase = getAdminClient();
+    const [supabase, actorId] = await Promise.all([
+      Promise.resolve(getAdminClient()),
+      getAuthenticatedUserId(),
+    ]);
     const now = new Date().toISOString();
     const eventSlug = slug || title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
 
@@ -306,6 +345,9 @@ export async function createContentEvent(
       created_at: now,
       updated_at: now,
       published_at: now,
+      created_by: actorId,
+      updated_by: actorId,
+      last_action: "created",
     };
 
     const { error } = await (supabase.from("content_items") as any).upsert(row, {
@@ -322,6 +364,7 @@ export async function createContentEvent(
     revalidatePath(`/events/${eventSlug}`);
     if (panelKey) revalidatePath(`/${panelKey}`);
 
+    console.log(`[createContentEvent] Event "${title}" created by ${actorId ?? "unknown"}`);
     return { success: true, slug: eventSlug };
   } catch (err: any) {
     console.error("[createContentEvent] unhandled exception:", err);
@@ -341,7 +384,10 @@ export async function createContentArticle(
   slug?: string
 ) {
   try {
-    const supabase = getAdminClient();
+    const [supabase, actorId] = await Promise.all([
+      Promise.resolve(getAdminClient()),
+      getAuthenticatedUserId(),
+    ]);
     const now = new Date().toISOString();
     const articleSlug = slug || title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
 
@@ -369,6 +415,9 @@ export async function createContentArticle(
       created_at: now,
       updated_at: now,
       published_at: now,
+      created_by: actorId,
+      updated_by: actorId,
+      last_action: "created",
     };
 
     const { error } = await (supabase.from("content_items") as any).upsert(row, {
@@ -384,6 +433,7 @@ export async function createContentArticle(
     revalidatePath("/");
     revalidatePath(`/blog`);
 
+    console.log(`[createContentArticle] Article "${title}" created by ${actorId ?? "unknown"}`);
     return { success: true, slug: articleSlug };
   } catch (err: any) {
     console.error("[createContentArticle] unhandled exception:", err);
@@ -391,3 +441,88 @@ export async function createContentArticle(
   }
 }
 
+/**
+ * Creates a blog post directly in the database.
+ * Writes type="blog" so it is distinct from auto-ingested articles.
+ * Goes live immediately (status: published) on /blog.
+ */
+export async function createBlogPost(
+  title: string,
+  summary: string,
+  body: string,
+  coverUrl: string,
+  author: string,
+  category: string,
+  tags: string[],
+  featured: boolean,
+  slug?: string
+) {
+  try {
+    const [supabase, actorId] = await Promise.all([
+      Promise.resolve(getAdminClient()),
+      getAuthenticatedUserId(),
+    ]);
+    const now = new Date().toISOString();
+    const postSlug =
+      slug || title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+
+    const metadata = {
+      created_via: "admin-ui",
+      post_type: "blog",      // distinguishes from auto-ingested articles
+      body,
+      author: author || "TheGameBit",
+      category: category || "general",
+    };
+
+    const allTags = Array.from(
+      new Set(
+        [...tags, "blog", category.toLowerCase()]
+          .map((t) => t.trim().toLowerCase())
+          .filter(Boolean)
+      )
+    );
+
+    const row = {
+      source: "admin",
+      source_id: postSlug,
+      type: "article",
+      status: "published",
+      title,
+      slug: postSlug,
+      summary,
+      cover_url: coverUrl || null,
+      platforms: [],
+      genres: [],
+      tags: allTags,
+      metadata,
+      featured,
+      source_payload: { created_at: now },
+      created_at: now,
+      updated_at: now,
+      published_at: now,
+      created_by: actorId,
+      updated_by: actorId,
+      last_action: "created",
+    };
+
+    const { error } = await (supabase.from("content_items") as any).upsert(row, {
+      onConflict: "source,source_id,type",
+    });
+
+    if (error) {
+      console.error("[createBlogPost] upsert error:", error);
+      return { error: error.message };
+    }
+
+    revalidatePath("/admin/review");
+    revalidatePath("/");
+    revalidatePath("/blog");
+    revalidatePath(`/blog/${postSlug}`);
+
+    console.log(`[createBlogPost] Blog post "${title}" created by ${actorId ?? "unknown"}`);
+    return { success: true, slug: postSlug };
+  } catch (err: any) {
+    console.error("[createBlogPost] unhandled exception:", err);
+    return { error: err.message || "Failed to create blog post" };
+  }
+}

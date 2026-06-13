@@ -59,7 +59,7 @@ export default async function CodmSeasonPage() {
         title="COD Mobile"
         highlight={mainEvent?.title.replace("COD Mobile — ", "") || "Season Details"}
         kicker="call of duty mobile"
-        tags={[{ emoji: "🎮", label: mainEvent?.title || "Season Event", variant: "codm" }]}
+        tags={[{ emoji: "", label: mainEvent?.title || "Season Event", variant: "codm" }]}
         ctaLabel="View Event Details"
         ctaHref={mainEvent ? `/events/${mainEvent.id}` : "/"}
       />

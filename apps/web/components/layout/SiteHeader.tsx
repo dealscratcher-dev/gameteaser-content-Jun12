@@ -78,12 +78,12 @@ export interface SiteHeaderProps {
 // ─── Defaults ────────────────────────────────────────────────────────────────
 
 const DEFAULT_LINKS: NavLink[] = [
-  { label: "Games",     href: "/games",     emoji: "🎮" },
-  { label: "Anime",     href: "/anime",     emoji: "⚡" },
-  { label: "Comics",    href: "/comics",    emoji: "💥" },
-  { label: "Movies",    href: "/movies",    emoji: "🎬" },
-  { label: "Universes", href: "/universes", emoji: "🌌" },
-  { label: "Releases",  href: "/releases",  emoji: "🗓️" },
+  { label: "Games",     href: "/games",     emoji: "" },
+  { label: "Anime",     href: "/anime",     emoji: "" },
+  { label: "Comics",    href: "/comics",    emoji: "" },
+  { label: "Movies",    href: "/movies",    emoji: "" },
+  { label: "Universes", href: "/universes", emoji: "" },
+  { label: "Releases",  href: "/releases",  emoji: "" },
 ];
 
 // ─── Logo ─────────────────────────────────────────────────────────────────────

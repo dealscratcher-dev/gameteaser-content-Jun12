@@ -7,16 +7,17 @@ import {
   rejectContent,
   needsChangesContent,
   createContentEvent,
-  createContentArticle
+  createContentArticle,
 } from "./actions";
 import { useToast, ToastContainer } from "@/components/ui/Toast";
 import UpdateContentPanel from "./UpdateContentPanel";
+import BlogEditor from "./BlogEditor";
 
 interface ReviewListProps {
   initialDrafts: ContentItemRow[];
 }
 
-type TabType = "drafts" | "create_event" | "create_article";
+type TabType = "drafts" | "create_event" | "create_article" | "create_blog";
 
 export default function ReviewList({ initialDrafts }: ReviewListProps) {
   const { toast } = useToast();
@@ -44,6 +45,7 @@ export default function ReviewList({ initialDrafts }: ReviewListProps) {
   const [articleCoverUrl, setArticleCoverUrl] = useState("");
   const [articleTags, setArticleTags] = useState("");
   const [articleSlug, setArticleSlug] = useState("");
+
 
   const handleApprove = (id: string) => {
     startTransition(async () => {
@@ -210,6 +212,19 @@ export default function ReviewList({ initialDrafts }: ReviewListProps) {
             }`}
           >
             Create Article
+          </button>
+          <button
+            onClick={() => {
+              setActiveTab("create_blog");
+              setEditingId(null);
+            }}
+            className={`px-4 py-2 text-sm font-bold uppercase tracking-wider border-b-2 transition ${
+              activeTab === "create_blog"
+                ? "border-purple-500 text-purple-400"
+                : "border-transparent text-white/50 hover:text-white/80 hover:border-white/10"
+            }`}
+          >
+            ✍️ Write Blog Post
           </button>
         </div>
 
@@ -662,6 +677,12 @@ export default function ReviewList({ initialDrafts }: ReviewListProps) {
               </button>
             </div>
           </form>
+        )}
+
+        {activeTab === "create_blog" && (
+          <div className="py-2">
+            <BlogEditor onPublished={() => setActiveTab("drafts")} />
+          </div>
         )}
       </div>
     </>

@@ -1,5 +1,7 @@
 import { createAdminSupabaseClient } from "@/lib/supabase";
 import ReviewList from "./ReviewList";
+import SignOutButton from "../SignOutButton";
+import SessionGuard from "../SessionGuard";
 
 export const dynamic = "force-dynamic";
 
@@ -19,6 +21,9 @@ export default async function AdminReviewPage() {
 
   return (
     <div className="min-h-screen bg-zinc-950 text-white font-[family-name:var(--font-ibm-plex)] pb-12">
+      {/* Signs user out on tab close / window hide */}
+      <SessionGuard />
+
       {/* Admin Header */}
       <header className="border-b border-white/10 bg-zinc-900/50 backdrop-blur-md sticky top-0 z-40">
         <div className="mx-auto max-w-7xl px-4 py-4 sm:px-6 lg:px-8 flex items-center justify-between">
@@ -32,10 +37,12 @@ export default async function AdminReviewPage() {
                 Review and publish imported content drafts
               </p>
             </div>
+            <div className="hidden sm:block text-xs font-semibold uppercase tracking-wider text-orange-400 bg-orange-400/10 border border-orange-400/20 px-3 py-1.5 rounded-full">
+              Admin Mode
+            </div>
           </div>
-          <div className="text-xs font-semibold uppercase tracking-wider text-orange-400 bg-orange-400/10 border border-orange-400/20 px-3 py-1.5 rounded-full">
-            Admin Mode
-          </div>
+          {/* Sign out button */}
+          <SignOutButton />
         </div>
       </header>
 
