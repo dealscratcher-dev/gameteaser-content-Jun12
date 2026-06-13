@@ -18,9 +18,9 @@ const NAV_ITEMS = [
 ];
 
 const HERO_TAGS: HeroTag[] = [
-  { label: "Game seasons", variant: "codm" },
-  { label: "Anime finales", variant: "anime" },
-  { label: "Comic-Con dates", variant: "comicon" },
+  { emoji: "🎮", label: "Game seasons", variant: "codm" },
+  { emoji: "🌸", label: "Anime finales", variant: "anime" },
+  { emoji: "🦸", label: "Comic-Con dates", variant: "comicon" },
 ];
 
 // ─── Helper functions ───────────────────────────────────────────────────
